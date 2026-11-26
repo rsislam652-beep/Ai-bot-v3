@@ -13,13 +13,5 @@ def health():
 def api_status():
     return {
         "api_key_added": bool(API_KEY),
-        "message": "API key found" if API_KEY else "API key @app.get("/health")
-def health():
-    return {"status": "online"}
-
-@app.get("/api/status")
-def api_status():
-    return {
-        "api_key_added": bool(API_KEY),
         "message": "API key found" if API_KEY else "API key missing"
     }
