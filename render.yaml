@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: sniper-ai-bot
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
