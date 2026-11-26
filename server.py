@@ -1,7 +1,7 @@
  from fastapi import FastAPI
 from fastapi.responses import FileResponse
 import os
-import requests
+
 
 app = FastAPI(title="SNIPER AI BOT")
 
