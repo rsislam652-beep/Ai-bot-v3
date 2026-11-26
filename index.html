@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNIPER AI BOT</title>
+<style>
+body{background:#07111f;color:white;font-family:Arial;text-align:center;padding:20px}
+.box{background:#14243a;padding:25px;border-radius:15px;margin-top:25px}
+button,select{padding:14px;margin:10px;border-radius:8px;font-size:17px}
+button{background:#00d69b;border:0;font-weight:bold}
+h1{color:#00d69b}
+#signal{font-size:30px;margin:20px}
+</style>
+</head>
+<body>
+<h1>SNIPER AI BOT</h1>
+<p>Quotex Market Companion</p>
+<div class="box">
+<select id="pair">
+<option>EUR/USD OTC</option>
+<option>GBP/USD OTC</option>
+<option>USD/JPY OTC</option>
+</select>
+<select id="tf">
+<option value="1">1 Minute</option>
+<option value="5">5 Minutes</option>
+</select>
+<br>
+<button onclick="scan()">SCAN MARKET</button>
+<div id="signal">WAIT</div>
+<p id="info">এখনো লাইভ মার্কেট ডেটা সংযুক্ত হয়নি।</p>
+</div>
+<script>
+function scan(){
+document.getElementById('signal').innerText='WAIT';
+document.getElementById('info').innerText='লাইভ ডেটা API সংযুক্ত না থাকায় এখন সিগন্যাল দেওয়া যাচ্ছে না।';
+}
+</script>
+</body>
+</html>
