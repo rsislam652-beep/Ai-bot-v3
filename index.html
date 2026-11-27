@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SNIPER AI BOT</title>
+
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#080d18;color:#fff;font-family:Arial,sans-serif;padding:18px}
@@ -30,12 +31,15 @@ button:disabled{opacity:.5}
 .history-item .PUT{color:#ff647c}
 .history-item .WAIT{color:#ffd166}
 .clear{background:#263650;color:white;margin-top:8px}
+.auto{background:#1479d0;color:white}
 .empty{text-align:center;color:#8190a8;font-size:13px;padding:15px}
 .footer{text-align:center;color:#8190a8;font-size:12px;line-height:1.6;margin:20px 0}
 </style>
 </head>
+
 <body>
 <div class="container">
+
 <h1>🎯 SNIPER AI</h1>
 <div class="sub">SMART MARKET ANALYSIS</div>
 
@@ -54,6 +58,7 @@ button:disabled{opacity:.5}
 </select>
 
 <button id="scan" onclick="scanMarket()">SCAN MARKET</button>
+<button id="autoButton" class="auto" onclick="toggleAuto()">AUTO SCAN: OFF</button>
 </div>
 
 <div class="card">
@@ -74,7 +79,7 @@ button:disabled{opacity:.5}
 
 <div class="card">
 <label>📊 SIGNAL HISTORY · LAST 20</label>
-<div id="history"><div class="empty">এখনো কোনো সিগন্যাল নেই।</div></div>
+<div id="history"></div>
 <button class="clear" onclick="clearHistory()">CLEAR HISTORY</button>
 </div>
 
@@ -83,20 +88,31 @@ Data: BiQuote · Regular Forex<br>
 Not Quotex OTC data. No guaranteed signals.<br>
 AUTO TRADE: OFF
 </div>
+
 </div>
 
 <script>
 const HISTORY_KEY="sniper_ai_signal_history";
 
+let autoEnabled=false;
+let scanTimer=null;
+let scanning=false;
+
 function getHistory(){
- try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]")}
- catch(e){return []}
+ try{
+  return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]");
+ }catch(e){
+  return [];
+ }
 }
 
 function saveHistory(item){
  const history=getHistory();
  history.unshift(item);
- localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,20)));
+ localStorage.setItem(
+  HISTORY_KEY,
+  JSON.stringify(history.slice(0,20))
+ );
  showHistory();
 }
 
@@ -126,30 +142,45 @@ function clearHistory(){
 }
 
 async function scanMarket(){
+
+ if(scanning)return;
+
  const button=document.getElementById("scan");
  const signal=document.getElementById("signal");
  const symbol=document.getElementById("symbol").value;
  const timeframe=document.getElementById("timeframe").value;
 
+ scanning=true;
  button.disabled=true;
  button.textContent="SCANNING...";
+
  signal.className="signal WAIT";
  signal.textContent="WAIT";
+
  document.getElementById("reason").textContent="Market data পরীক্ষা হচ্ছে...";
  document.getElementById("market").textContent="Loading";
 
  try{
-  const url="/api/analysis?symbol="+encodeURIComponent(symbol)+"&timeframe="+encodeURIComponent(timeframe);
+  const url="/api/analysis?symbol="+
+   encodeURIComponent(symbol)+
+   "&timeframe="+encodeURIComponent(timeframe);
+
   const response=await fetch(url);
   const data=await response.json();
 
-  if(!response.ok) throw new Error(data.detail||"Analysis failed");
+  if(!response.ok){
+   throw new Error(data.detail||"Analysis failed");
+  }
 
-  const result=["CALL","PUT","WAIT"].includes(data.signal)?data.signal:"WAIT";
+  const result=["CALL","PUT","WAIT"].includes(data.signal)
+   ?data.signal:"WAIT";
 
   signal.textContent=result;
   signal.className="signal "+result;
-  document.getElementById("reason").textContent=data.reason||"No confirmed direction";
+
+  document.getElementById("reason").textContent=
+   data.reason||"No confirmed direction";
+
   document.getElementById("ema9").textContent=data.ema9??"--";
   document.getElementById("ema21").textContent=data.ema21??"--";
   document.getElementById("rsi").textContent=data.rsi14??"--";
@@ -163,26 +194,56 @@ async function scanMarket(){
   });
 
  }catch(error){
+
   signal.textContent="WAIT";
   signal.className="signal WAIT";
-  document.getElementById("reason").textContent="ডেটা পাওয়া যায়নি: "+error.message;
+
+  document.getElementById("reason").textContent=
+   "ডেটা পাওয়া যায়নি: "+error.message;
+
   document.getElementById("market").textContent="Error";
   document.getElementById("ema9").textContent="--";
   document.getElementById("ema21").textContent="--";
   document.getElementById("rsi").textContent="--";
+
  }finally{
+
+  scanning=false;
   button.disabled=false;
   button.textContent="SCAN MARKET";
+
+ }
+}
+
+function toggleAuto(){
+
+ const autoButton=document.getElementById("autoButton");
+
+ if(autoEnabled){
+
+  autoEnabled=false;
+  clearInterval(scanTimer);
+  scanTimer=null;
+  autoButton.textContent="AUTO SCAN: OFF";
+
+ }else{
+
+  autoEnabled=true;
+  autoButton.textContent="AUTO SCAN: ON";
+
+  scanMarket();
+
+  scanTimer=setInterval(()=>{
+   if(autoEnabled && !scanning){
+    scanMarket();
+   }
+  },60000);
+
  }
 }
 
 showHistory();
 </script>
+
 </body>
 </html>
-setInterval(() => {
-  const button = document.getElementById("scan");
-  if (!button.disabled) {
-    scanMarket();
-  }
-}, 60000);
