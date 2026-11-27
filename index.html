@@ -76,7 +76,27 @@ button:disabled{opacity:.5}
 <div class="metric"><small>MARKET</small><strong id="market">--</strong></div>
 </div>
 </div>
-
+<div class="card">
+<label>📈 SIGNAL TRACKER</label>
+<div class="grid">
+<div class="metric">
+<small>CALL</small>
+<strong id="calls">0</strong>
+</div>
+<div class="metric">
+<small>PUT</small>
+<strong id="puts">0</strong>
+</div>
+<div class="metric">
+<small>WAIT</small>
+<strong id="waits">0</strong>
+</div>
+<div class="metric">
+<small>TOTAL SIGNALS</small>
+<strong id="total">0</strong>
+</div>
+</div>
+</div>
 <div class="card">
 <label>📊 SIGNAL HISTORY · LAST 20</label>
 <div id="history"></div>
@@ -138,7 +158,7 @@ function clearHistory(){
  if(confirm("সব সিগন্যাল হিস্ট্রি মুছে ফেলবে?")){
   localStorage.removeItem(HISTORY_KEY);
   showHistory();
- }
+ }updateAccuracy();
 }
 
 async function scanMarket(){
@@ -243,6 +263,23 @@ function toggleAuto(){
 }
 
 showHistory();
+updateAccuracy();
+function updateAccuracy(){
+ const history=getHistory();
+
+ const calls=history.filter(x=>x.signal==="CALL").length;
+ const puts=history.filter(x=>x.signal==="PUT").length;
+ const waits=history.filter(x=>x.signal==="WAIT").length;
+ const total=history.length;
+
+ document.getElementById("calls").textContent=calls;
+ document.getElementById("puts").textContent=puts;
+ document.getElementById("waits").textContent=waits;
+ document.getElementById("total").textContent=total;
+}
+
+updateAccuracy();
+
 </script>
 
 </body>
