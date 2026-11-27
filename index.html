@@ -24,6 +24,13 @@ button:disabled{opacity:.5}
 .metric small{display:block;color:#91a0b8;margin-bottom:8px}
 .metric strong{font-size:18px}
 .reason{color:#b8c5d8;line-height:1.5;font-size:14px}
+.history-item{background:#0b1423;border-radius:10px;padding:12px;margin:9px 0;font-size:13px;line-height:1.7}
+.history-item strong{font-size:16px}
+.history-item .CALL{color:#00e5a0}
+.history-item .PUT{color:#ff647c}
+.history-item .WAIT{color:#ffd166}
+.clear{background:#263650;color:white;margin-top:8px}
+.empty{text-align:center;color:#8190a8;font-size:13px;padding:15px}
 .footer{text-align:center;color:#8190a8;font-size:12px;line-height:1.6;margin:20px 0}
 </style>
 </head>
@@ -58,23 +65,17 @@ button:disabled{opacity:.5}
 <div class="card">
 <label>TECHNICAL INDICATORS</label>
 <div class="grid">
-<div class="metric">
-<small>EMA 9</small>
-<strong id="ema9">--</strong>
-</div>
-<div class="metric">
-<small>EMA 21</small>
-<strong id="ema21">--</strong>
-</div>
-<div class="metric">
-<small>RSI 14</small>
-<strong id="rsi">--</strong>
-</div>
-<div class="metric">
-<small>MARKET</small>
-<strong id="market">--</strong>
+<div class="metric"><small>EMA 9</small><strong id="ema9">--</strong></div>
+<div class="metric"><small>EMA 21</small><strong id="ema21">--</strong></div>
+<div class="metric"><small>RSI 14</small><strong id="rsi">--</strong></div>
+<div class="metric"><small>MARKET</small><strong id="market">--</strong></div>
 </div>
 </div>
+
+<div class="card">
+<label>📊 SIGNAL HISTORY · LAST 20</label>
+<div id="history"><div class="empty">এখনো কোনো সিগন্যাল নেই।</div></div>
+<button class="clear" onclick="clearHistory()">CLEAR HISTORY</button>
 </div>
 
 <div class="footer">
@@ -85,6 +86,45 @@ AUTO TRADE: OFF
 </div>
 
 <script>
+const HISTORY_KEY="sniper_ai_signal_history";
+
+function getHistory(){
+ try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]")}
+ catch(e){return []}
+}
+
+function saveHistory(item){
+ const history=getHistory();
+ history.unshift(item);
+ localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,20)));
+ showHistory();
+}
+
+function showHistory(){
+ const box=document.getElementById("history");
+ const history=getHistory();
+
+ if(!history.length){
+  box.innerHTML='<div class="empty">এখনো কোনো সিগন্যাল নেই।</div>';
+  return;
+ }
+
+ box.innerHTML=history.map(item=>`
+  <div class="history-item">
+   <strong class="${item.signal}">${item.signal}</strong>
+   &nbsp; ${item.symbol} · ${item.timeframe}<br>
+   <span>${item.time}</span>
+  </div>
+ `).join("");
+}
+
+function clearHistory(){
+ if(confirm("সব সিগন্যাল হিস্ট্রি মুছে ফেলবে?")){
+  localStorage.removeItem(HISTORY_KEY);
+  showHistory();
+ }
+}
+
 async function scanMarket(){
  const button=document.getElementById("scan");
  const signal=document.getElementById("signal");
@@ -105,7 +145,8 @@ async function scanMarket(){
 
   if(!response.ok) throw new Error(data.detail||"Analysis failed");
 
-  const result=data.signal||"WAIT";
+  const result=["CALL","PUT","WAIT"].includes(data.signal)?data.signal:"WAIT";
+
   signal.textContent=result;
   signal.className="signal "+result;
   document.getElementById("reason").textContent=data.reason||"No confirmed direction";
@@ -113,6 +154,14 @@ async function scanMarket(){
   document.getElementById("ema21").textContent=data.ema21??"--";
   document.getElementById("rsi").textContent=data.rsi14??"--";
   document.getElementById("market").textContent=symbol;
+
+  saveHistory({
+   signal:result,
+   symbol:symbol,
+   timeframe:timeframe,
+   time:new Date().toLocaleString()
+  });
+
  }catch(error){
   signal.textContent="WAIT";
   signal.className="signal WAIT";
@@ -126,6 +175,8 @@ async function scanMarket(){
   button.textContent="SCAN MARKET";
  }
 }
+
+showHistory();
 </script>
 </body>
 </html>
