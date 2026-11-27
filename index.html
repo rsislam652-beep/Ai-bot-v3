@@ -5,36 +5,126 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SNIPER AI BOT</title>
 <style>
-body{background:#07111f;color:white;font-family:Arial;text-align:center;padding:20px}
-.box{background:#14243a;padding:25px;border-radius:15px;margin-top:25px}
-button,select{padding:14px;margin:10px;border-radius:8px;font-size:17px}
-button{background:#00d69b;border:0;font-weight:bold}
-h1{color:#00d69b}
-#signal{font-size:30px;margin:20px}
+*{box-sizing:border-box}
+body{margin:0;background:#080d18;color:#fff;font-family:Arial,sans-serif;padding:18px}
+.container{max-width:480px;margin:auto}
+h1{text-align:center;color:#00e5a0;margin:12px 0 5px}
+.sub{text-align:center;color:#8c9bb5;font-size:13px;margin-bottom:22px}
+.card{background:#121c2d;border:1px solid #263650;border-radius:15px;padding:18px;margin:14px 0}
+label{display:block;color:#9eabc0;margin-bottom:8px;font-size:13px}
+select,button{width:100%;padding:14px;border-radius:10px;border:1px solid #354761;background:#0b1423;color:white;font-size:16px;margin-bottom:14px}
+button{background:#00c98d;color:#06140f;font-weight:bold;border:0;cursor:pointer}
+button:disabled{opacity:.5}
+.signal{text-align:center;font-size:34px;font-weight:bold;padding:18px;border-radius:12px;background:#0b1423;color:#ffd166}
+.signal.CALL{color:#00e5a0}
+.signal.PUT{color:#ff647c}
+.signal.WAIT{color:#ffd166}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.metric{background:#0b1423;border-radius:10px;padding:15px}
+.metric small{display:block;color:#91a0b8;margin-bottom:8px}
+.metric strong{font-size:18px}
+.reason{color:#b8c5d8;line-height:1.5;font-size:14px}
+.footer{text-align:center;color:#8190a8;font-size:12px;line-height:1.6;margin:20px 0}
 </style>
 </head>
 <body>
-<h1>SNIPER AI BOT</h1>
-<p>Quotex Market Companion</p>
-<div class="box">
-<select id="pair">
-<option>EUR/USD OTC</option>
-<option>GBP/USD OTC</option>
-<option>USD/JPY OTC</option>
+<div class="container">
+<h1>🎯 SNIPER AI</h1>
+<div class="sub">SMART MARKET ANALYSIS</div>
+
+<div class="card">
+<label>Market</label>
+<select id="symbol">
+<option value="EURUSD">EUR/USD</option>
+<option value="GBPUSD">GBP/USD</option>
+<option value="USDJPY">USD/JPY</option>
 </select>
-<select id="tf">
-<option value="1">1 Minute</option>
-<option value="5">5 Minutes</option>
+
+<label>Timeframe</label>
+<select id="timeframe">
+<option value="1m">1 Minute</option>
+<option value="5m" selected>5 Minutes</option>
 </select>
-<br>
-<button onclick="scan()">SCAN MARKET</button>
-<div id="signal">WAIT</div>
-<p id="info">এখনো লাইভ মার্কেট ডেটা সংযুক্ত হয়নি।</p>
+
+<button id="scan" onclick="scanMarket()">SCAN MARKET</button>
 </div>
+
+<div class="card">
+<label>AI SIGNAL</label>
+<div id="signal" class="signal WAIT">WAIT</div>
+<p id="reason" class="reason">SCAN MARKET চাপ দিয়ে বিশ্লেষণ শুরু করো।</p>
+</div>
+
+<div class="card">
+<label>TECHNICAL INDICATORS</label>
+<div class="grid">
+<div class="metric">
+<small>EMA 9</small>
+<strong id="ema9">--</strong>
+</div>
+<div class="metric">
+<small>EMA 21</small>
+<strong id="ema21">--</strong>
+</div>
+<div class="metric">
+<small>RSI 14</small>
+<strong id="rsi">--</strong>
+</div>
+<div class="metric">
+<small>MARKET</small>
+<strong id="market">--</strong>
+</div>
+</div>
+</div>
+
+<div class="footer">
+Data: BiQuote · Regular Forex<br>
+Not Quotex OTC data. No guaranteed signals.<br>
+AUTO TRADE: OFF
+</div>
+</div>
+
 <script>
-function scan(){
-document.getElementById('signal').innerText='WAIT';
-document.getElementById('info').innerText='লাইভ ডেটা API সংযুক্ত না থাকায় এখন সিগন্যাল দেওয়া যাচ্ছে না।';
+async function scanMarket(){
+ const button=document.getElementById("scan");
+ const signal=document.getElementById("signal");
+ const symbol=document.getElementById("symbol").value;
+ const timeframe=document.getElementById("timeframe").value;
+
+ button.disabled=true;
+ button.textContent="SCANNING...";
+ signal.className="signal WAIT";
+ signal.textContent="WAIT";
+ document.getElementById("reason").textContent="Market data পরীক্ষা হচ্ছে...";
+ document.getElementById("market").textContent="Loading";
+
+ try{
+  const url="/api/analysis?symbol="+encodeURIComponent(symbol)+"&timeframe="+encodeURIComponent(timeframe);
+  const response=await fetch(url);
+  const data=await response.json();
+
+  if(!response.ok) throw new Error(data.detail||"Analysis failed");
+
+  const result=data.signal||"WAIT";
+  signal.textContent=result;
+  signal.className="signal "+result;
+  document.getElementById("reason").textContent=data.reason||"No confirmed direction";
+  document.getElementById("ema9").textContent=data.ema9??"--";
+  document.getElementById("ema21").textContent=data.ema21??"--";
+  document.getElementById("rsi").textContent=data.rsi14??"--";
+  document.getElementById("market").textContent=symbol;
+ }catch(error){
+  signal.textContent="WAIT";
+  signal.className="signal WAIT";
+  document.getElementById("reason").textContent="ডেটা পাওয়া যায়নি: "+error.message;
+  document.getElementById("market").textContent="Error";
+  document.getElementById("ema9").textContent="--";
+  document.getElementById("ema21").textContent="--";
+  document.getElementById("rsi").textContent="--";
+ }finally{
+  button.disabled=false;
+  button.textContent="SCAN MARKET";
+ }
 }
 </script>
 </body>
