@@ -5,10 +5,16 @@ from datetime import datetime, timezone
 import json
 import re
 import os
+import uuid
+from threading import Lock
 
 app = FastAPI(title="SNIPER AI BOT")
 
 API_KEY = os.getenv("OTCHARTS_API_KEY")
+
+result_lock = Lock()
+pending_results = {}
+completed_results = []
 
 
 @app.get("/")
@@ -37,12 +43,30 @@ def get_candles(symbol, timeframe):
         f"https://biquote.io/api/{symbol}/ohlc"
         f"?interval={timeframe}&limit=50"
     )
-    request = Request(url, headers={"User-Agent": "SNIPER-AI-BOT"})
+
+    request = Request(
+        url,
+        headers={"User-Agent": "SNIPER-AI-BOT"}
+    )
 
     with urlopen(request, timeout=15) as response:
         data = json.loads(response.read().decode("utf-8"))
 
     return data.get("bars", [])
+
+
+def get_current_price(symbol, timeframe):
+    bars = get_candles(symbol, timeframe)
+
+    if not bars:
+        raise ValueError("No market candles")
+
+    price = float(bars[0]["close"])
+
+    if price <= 0:
+        raise ValueError("Invalid market price")
+
+    return price
 
 
 @app.get("/api/market-data")
@@ -55,11 +79,19 @@ def market_data(symbol: str = "EURUSD"):
     url = f"https://biquote.io/api/{symbol}"
 
     try:
-        request = Request(url, headers={"User-Agent": "SNIPER-AI-BOT"})
+        request = Request(
+            url,
+            headers={"User-Agent": "SNIPER-AI-BOT"}
+        )
+
         with urlopen(request, timeout=15) as response:
             return json.loads(response.read().decode("utf-8"))
+
     except Exception:
-        raise HTTPException(status_code=502, detail="Market data unavailable")
+        raise HTTPException(
+            status_code=502,
+            detail="Market data unavailable"
+        )
 
 
 @app.get("/api/candles")
@@ -74,6 +106,7 @@ def candles(symbol: str = "EURUSD", timeframe: str = "1m"):
 
     try:
         bars = get_candles(symbol, timeframe)
+
         return {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -81,8 +114,12 @@ def candles(symbol: str = "EURUSD", timeframe: str = "1m"):
             "source": "biquote",
             "note": "Regular forex, not Quotex OTC"
         }
+
     except Exception:
-        raise HTTPException(status_code=502, detail="Candle data unavailable")
+        raise HTTPException(
+            status_code=502,
+            detail="Candle data unavailable"
+        )
 
 
 def calculate_ema(values, period):
@@ -114,14 +151,35 @@ def calculate_rsi(values, period=14):
     avg_loss = sum(losses[:period]) / period
 
     for i in range(period, len(changes)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        avg_gain = (
+            avg_gain * (period - 1) + gains[i]
+        ) / period
+
+        avg_loss = (
+            avg_loss * (period - 1) + losses[i]
+        ) / period
 
     if avg_loss == 0:
         return 100.0
 
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
+
+
+def register_result(symbol, timeframe, signal, entry_price):
+    result_id = str(uuid.uuid4())
+
+    with result_lock:
+        pending_results[result_id] = {
+            "id": result_id,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "signal": signal,
+            "entry_price": entry_price,
+            "created_at": datetime.now(timezone.utc)
+        }
+
+    return result_id
 
 
 @app.get("/api/analysis")
@@ -138,9 +196,13 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
         bars = get_candles(symbol, timeframe)
 
         if not bars:
-            raise HTTPException(status_code=502, detail="No candle data")
+            raise HTTPException(
+                status_code=502,
+                detail="No candle data"
+            )
 
         newest = bars[0]
+
         newest_time = datetime.fromisoformat(
             newest["openTime"].replace("Z", "+00:00")
         )
@@ -149,11 +211,17 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
         age_seconds = (now - newest_time).total_seconds()
         max_age = 180 if timeframe == "1m" else 600
 
-        # Exclude the currently forming candle
-        closed_bars = [bar for bar in bars if not bar.get("isOpen", False)]
+        closed_bars = [
+            bar for bar in bars
+            if not bar.get("isOpen", False)
+        ]
+
         closed_bars = list(reversed(closed_bars))
 
-        closes = [float(bar["close"]) for bar in closed_bars]
+        closes = [
+            float(bar["close"])
+            for bar in closed_bars
+        ]
 
         if age_seconds < -60 or age_seconds > max_age:
             return {
@@ -190,7 +258,7 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
             signal = "PUT"
             reason = "EMA 9 below EMA 21 and RSI confirms downward momentum"
 
-        return {
+        response_data = {
             "symbol": symbol,
             "timeframe": timeframe,
             "signal": signal,
@@ -199,13 +267,114 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
             "rsi14": round(rsi14, 2),
             "reason": reason,
             "source": "biquote",
-            "note": "Regular forex, not Quotex OTC. Not a guaranteed trading signal."
+            "note": "Regular forex, not Quotex OTC. Not guaranteed."
         }
+
+        if signal in ("CALL", "PUT"):
+            entry_price = float(newest["close"])
+
+            result_id = register_result(
+                symbol,
+                timeframe,
+                signal,
+                entry_price
+            )
+
+            response_data["result_id"] = result_id
+            response_data["entry_price"] = entry_price
+            response_data["result_after_seconds"] = 60
+
+        return response_data
 
     except HTTPException:
         raise
+
     except Exception:
-        raise HTTPException(status_code=502, detail="Analysis unavailable")
+        raise HTTPException(
+            status_code=502,
+            detail="Analysis unavailable"
+        )
+
+
+@app.get("/api/result-check")
+def result_check():
+    now = datetime.now(timezone.utc)
+    completed_now = []
+
+    with result_lock:
+        due_items = [
+            (key, item)
+            for key, item in pending_results.items()
+            if (now - item["created_at"]).total_seconds() >= 60
+        ]
+
+    for key, item in due_items:
+        try:
+            exit_price = get_current_price(
+                item["symbol"],
+                item["timeframe"]
+            )
+
+            entry_price = item["entry_price"]
+            signal = item["signal"]
+
+            if exit_price == entry_price:
+                outcome = "DRAW"
+
+            elif signal == "CALL":
+                outcome = (
+                    "WIN" if exit_price > entry_price
+                    else "LOSS"
+                )
+
+            else:
+                outcome = (
+                    "WIN" if exit_price < entry_price
+                    else "LOSS"
+                )
+
+            record = {
+                "id": key,
+                "symbol": item["symbol"],
+                "timeframe": item["timeframe"],
+                "signal": signal,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "result": outcome,
+                "checked_at": datetime.now(
+                    timezone.utc
+                ).isoformat()
+            }
+
+            with result_lock:
+                pending_results.pop(key, None)
+                completed_results.insert(0, record)
+                del completed_results[50:]
+
+            completed_now.append(record)
+
+        except Exception:
+            continue
+
+    with result_lock:
+        pending = [
+            {
+                "id": item["id"],
+                "symbol": item["symbol"],
+                "signal": item["signal"],
+                "status": "PENDING"
+            }
+            for item in pending_results.values()
+        ]
+
+        completed = list(completed_results)
+
+    return {
+        "check_after_seconds": 60,
+        "pending": pending,
+        "completed": completed,
+        "note": "Results compare BiQuote regular Forex prices, not Quotex OTC."
+    }
 
 
 @app.get("/api/signal")
