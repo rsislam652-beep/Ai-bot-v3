@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SNIPER AI BOT</title>
-
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#080d18;color:#fff;font-family:Arial,sans-serif;padding:18px}
@@ -17,9 +16,9 @@ select,button{width:100%;padding:14px;border-radius:10px;border:1px solid #35476
 button{background:#00c98d;color:#06140f;font-weight:bold;border:0;cursor:pointer}
 button:disabled{opacity:.5}
 .signal{text-align:center;font-size:34px;font-weight:bold;padding:18px;border-radius:12px;background:#0b1423;color:#ffd166}
-.signal.CALL{color:#00e5a0}
-.signal.PUT{color:#ff647c}
-.signal.WAIT{color:#ffd166}
+.signal.CALL,.WIN{color:#00e5a0}
+.signal.PUT,.LOSS{color:#ff647c}
+.signal.WAIT,.DRAW{color:#ffd166}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .metric{background:#0b1423;border-radius:10px;padding:15px}
 .metric small{display:block;color:#91a0b8;margin-bottom:8px}
@@ -34,9 +33,9 @@ button:disabled{opacity:.5}
 .auto{background:#1479d0;color:white}
 .empty{text-align:center;color:#8190a8;font-size:13px;padding:15px}
 .footer{text-align:center;color:#8190a8;font-size:12px;line-height:1.6;margin:20px 0}
+.status{font-size:13px;color:#91a0b8;line-height:1.6}
 </style>
 </head>
-
 <body>
 <div class="container">
 
@@ -76,36 +75,39 @@ button:disabled{opacity:.5}
 <div class="metric"><small>MARKET</small><strong id="market">--</strong></div>
 </div>
 </div>
+
 <div class="card">
 <label>📈 SIGNAL TRACKER</label>
 <div class="grid">
-<div class="metric">
-<small>CALL</small>
-<strong id="calls">0</strong>
-</div>
-<div class="metric">
-<small>PUT</small>
-<strong id="puts">0</strong>
-</div>
-<div class="metric">
-<small>WAIT</small>
-<strong id="waits">0</strong>
-</div>
-<div class="metric">
-<small>TOTAL SIGNALS</small>
-<strong id="total">0</strong>
+<div class="metric"><small>CALL</small><strong id="calls">0</strong></div>
+<div class="metric"><small>PUT</small><strong id="puts">0</strong></div>
+<div class="metric"><small>WAIT</small><strong id="waits">0</strong></div>
+<div class="metric"><small>TOTAL SIGNALS</small><strong id="total">0</strong></div>
 </div>
 </div>
+
+<div class="card">
+<label>⏱️ 1-MINUTE RESULT CHECKER</label>
+<div class="grid">
+<div class="metric"><small>PENDING</small><strong id="pendingCount">0</strong></div>
+<div class="metric"><small>WIN</small><strong id="wins">0</strong></div>
+<div class="metric"><small>LOSS</small><strong id="losses">0</strong></div>
+<div class="metric"><small>DRAW</small><strong id="draws">0</strong></div>
 </div>
+<p id="resultStatus" class="status">Result Checker চালু আছে। সিগন্যালের ৬০ সেকেন্ড পর ফল পরীক্ষা হবে।</p>
+<div id="resultHistory"></div>
+</div>
+
 <div class="card">
 <label>📊 SIGNAL HISTORY · LAST 20</label>
 <div id="history"></div>
-<button class="clear" onclick="clearHistory()">CLEAR HISTORY</button>
+<button class="clear" onclick="clearHistory()">CLEAR SIGNAL HISTORY</button>
 </div>
 
 <div class="footer">
 Data: BiQuote · Regular Forex<br>
 Not Quotex OTC data. No guaranteed signals.<br>
+Results are price comparisons, not actual Quotex outcomes.<br>
 AUTO TRADE: OFF
 </div>
 
@@ -113,27 +115,29 @@ AUTO TRADE: OFF
 
 <script>
 const HISTORY_KEY="sniper_ai_signal_history";
+const RESULT_KEY="sniper_ai_result_history";
 
 let autoEnabled=false;
 let scanTimer=null;
 let scanning=false;
+let checkingResults=false;
 
 function getHistory(){
- try{
-  return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]");
- }catch(e){
-  return [];
- }
+ try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]");}
+ catch(e){return [];}
+}
+
+function getResults(){
+ try{return JSON.parse(localStorage.getItem(RESULT_KEY)||"[]");}
+ catch(e){return [];}
 }
 
 function saveHistory(item){
  const history=getHistory();
  history.unshift(item);
- localStorage.setItem(
-  HISTORY_KEY,
-  JSON.stringify(history.slice(0,20))
- );
+ localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,20)));
  showHistory();
+ updateAccuracy();
 }
 
 function showHistory(){
@@ -158,11 +162,92 @@ function clearHistory(){
  if(confirm("সব সিগন্যাল হিস্ট্রি মুছে ফেলবে?")){
   localStorage.removeItem(HISTORY_KEY);
   showHistory();
- }updateAccuracy();
+  updateAccuracy();
+ }
+}
+
+function updateAccuracy(){
+ const history=getHistory();
+ document.getElementById("calls").textContent=
+  history.filter(x=>x.signal==="CALL").length;
+ document.getElementById("puts").textContent=
+  history.filter(x=>x.signal==="PUT").length;
+ document.getElementById("waits").textContent=
+  history.filter(x=>x.signal==="WAIT").length;
+ document.getElementById("total").textContent=history.length;
+}
+
+function showResults(){
+ const results=getResults();
+ const box=document.getElementById("resultHistory");
+
+ document.getElementById("wins").textContent=
+  results.filter(x=>x.result==="WIN").length;
+ document.getElementById("losses").textContent=
+  results.filter(x=>x.result==="LOSS").length;
+ document.getElementById("draws").textContent=
+  results.filter(x=>x.result==="DRAW").length;
+
+ if(!results.length){
+  box.innerHTML='<div class="empty">এখনো কোনো Result পাওয়া যায়নি।</div>';
+  return;
+ }
+
+ box.innerHTML=results.slice(0,20).map(item=>`
+  <div class="history-item">
+   <strong class="${item.result}">${item.result}</strong>
+   &nbsp; ${item.symbol} · ${item.timeframe}<br>
+   Signal: ${item.signal}<br>
+   Entry: ${item.entry_price} · Exit: ${item.exit_price}<br>
+   <span>${new Date(item.checked_at).toLocaleString()}</span>
+  </div>
+ `).join("");
+}
+
+async function checkResults(){
+ if(checkingResults)return;
+ checkingResults=true;
+
+ try{
+  const response=await fetch("/api/result-check");
+  const data=await response.json();
+
+  if(!response.ok)throw new Error("Result API error");
+
+  const pending=data.pending||[];
+  const completed=data.completed||[];
+  document.getElementById("pendingCount").textContent=pending.length;
+
+  let saved=getResults();
+  const knownIds=new Set(saved.map(x=>x.id));
+  let added=0;
+
+  completed.forEach(item=>{
+   if(!knownIds.has(item.id)){
+    saved.unshift(item);
+    knownIds.add(item.id);
+    added++;
+   }
+  });
+
+  if(added){
+   localStorage.setItem(RESULT_KEY,JSON.stringify(saved.slice(0,50)));
+   showResults();
+  }
+
+  document.getElementById("resultStatus").textContent=
+   "Checker Active · Pending: "+pending.length+
+   " · নতুন ফলাফল: "+added;
+
+ }catch(error){
+  document.getElementById("resultStatus").textContent=
+   "Result Checker সংযোগ সমস্যা: "+error.message;
+ }finally{
+  checkingResults=false;
+ }
 }
 
 async function scanMarket(){
-
  if(scanning)return;
 
  const button=document.getElementById("scan");
@@ -173,7 +258,6 @@ async function scanMarket(){
  scanning=true;
  button.disabled=true;
  button.textContent="SCANNING...";
-
  signal.className="signal WAIT";
  signal.textContent="WAIT";
 
@@ -181,26 +265,20 @@ async function scanMarket(){
  document.getElementById("market").textContent="Loading";
 
  try{
-  const url="/api/analysis?symbol="+
-   encodeURIComponent(symbol)+
+  const url="/api/analysis?symbol="+encodeURIComponent(symbol)+
    "&timeframe="+encodeURIComponent(timeframe);
 
   const response=await fetch(url);
   const data=await response.json();
 
-  if(!response.ok){
-   throw new Error(data.detail||"Analysis failed");
-  }
+  if(!response.ok)throw new Error(data.detail||"Analysis failed");
 
   const result=["CALL","PUT","WAIT"].includes(data.signal)
    ?data.signal:"WAIT";
 
   signal.textContent=result;
   signal.className="signal "+result;
-
-  document.getElementById("reason").textContent=
-   data.reason||"No confirmed direction";
-
+  document.getElementById("reason").textContent=data.reason||"No confirmed direction";
   document.getElementById("ema9").textContent=data.ema9??"--";
   document.getElementById("ema21").textContent=data.ema21??"--";
   document.getElementById("rsi").textContent=data.rsi14??"--";
@@ -213,74 +291,56 @@ async function scanMarket(){
    time:new Date().toLocaleString()
   });
 
- }catch(error){
+  if(result==="CALL"||result==="PUT"){
+   document.getElementById("resultStatus").textContent=
+    data.result_id
+    ?"সিগন্যাল রেকর্ড হয়েছে। ৬০ সেকেন্ড পর ফল পরীক্ষা হবে।"
+    :"সিগন্যাল এসেছে, তবে Result ID পাওয়া যায়নি।";
+  }
 
+  checkResults();
+
+ }catch(error){
   signal.textContent="WAIT";
   signal.className="signal WAIT";
-
   document.getElementById("reason").textContent=
    "ডেটা পাওয়া যায়নি: "+error.message;
-
   document.getElementById("market").textContent="Error";
   document.getElementById("ema9").textContent="--";
   document.getElementById("ema21").textContent="--";
   document.getElementById("rsi").textContent="--";
-
  }finally{
-
   scanning=false;
   button.disabled=false;
   button.textContent="SCAN MARKET";
-
  }
 }
 
 function toggleAuto(){
-
  const autoButton=document.getElementById("autoButton");
 
  if(autoEnabled){
-
   autoEnabled=false;
   clearInterval(scanTimer);
   scanTimer=null;
   autoButton.textContent="AUTO SCAN: OFF";
-
  }else{
-
   autoEnabled=true;
   autoButton.textContent="AUTO SCAN: ON";
-
   scanMarket();
-
   scanTimer=setInterval(()=>{
-   if(autoEnabled && !scanning){
-    scanMarket();
-   }
+   if(autoEnabled&&!scanning)scanMarket();
   },60000);
-
  }
 }
 
 showHistory();
 updateAccuracy();
-function updateAccuracy(){
- const history=getHistory();
+showResults();
+checkResults();
 
- const calls=history.filter(x=>x.signal==="CALL").length;
- const puts=history.filter(x=>x.signal==="PUT").length;
- const waits=history.filter(x=>x.signal==="WAIT").length;
- const total=history.length;
-
- document.getElementById("calls").textContent=calls;
- document.getElementById("puts").textContent=puts;
- document.getElementById("waits").textContent=waits;
- document.getElementById("total").textContent=total;
-}
-
-updateAccuracy();
-
+// প্রতি ১০ সেকেন্ডে Result API পরীক্ষা করবে
+setInterval(checkResults,10000);
 </script>
-
 </body>
 </html>
