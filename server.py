@@ -32,7 +32,6 @@ def api_status():
     return {
         "bot": "SNIPER AI",
         "status": "online",
-        "api_key_added": bool(API_KEY),
         "market_data": "biquote",
         "auto_trade": "disabled"
     }
@@ -43,95 +42,69 @@ def get_candles(symbol, timeframe):
         f"https://biquote.io/api/{symbol}/ohlc"
         f"?interval={timeframe}&limit=50"
     )
-
     request = Request(
         url,
         headers={"User-Agent": "SNIPER-AI-BOT"}
     )
-
     with urlopen(request, timeout=15) as response:
         data = json.loads(response.read().decode("utf-8"))
-
     return data.get("bars", [])
 
 
 def get_current_price(symbol, timeframe):
     bars = get_candles(symbol, timeframe)
-
     if not bars:
         raise ValueError("No market candles")
-
     price = float(bars[0]["close"])
-
     if price <= 0:
         raise ValueError("Invalid market price")
-
     return price
 
 
 @app.get("/api/market-data")
 def market_data(symbol: str = "EURUSD"):
     symbol = symbol.upper()
-
     if not re.fullmatch(r"[A-Z0-9]{3,12}", symbol):
         raise HTTPException(status_code=400, detail="Invalid symbol")
 
-    url = f"https://biquote.io/api/{symbol}"
-
     try:
         request = Request(
-            url,
+            f"https://biquote.io/api/{symbol}",
             headers={"User-Agent": "SNIPER-AI-BOT"}
         )
-
         with urlopen(request, timeout=15) as response:
             return json.loads(response.read().decode("utf-8"))
-
     except Exception:
-        raise HTTPException(
-            status_code=502,
-            detail="Market data unavailable"
-        )
+        raise HTTPException(status_code=502, detail="Market data unavailable")
 
 
 @app.get("/api/candles")
 def candles(symbol: str = "EURUSD", timeframe: str = "1m"):
     symbol = symbol.upper()
-
     if timeframe not in ("1m", "5m"):
         raise HTTPException(status_code=400, detail="Use 1m or 5m")
-
     if not re.fullmatch(r"[A-Z0-9]{3,12}", symbol):
         raise HTTPException(status_code=400, detail="Invalid symbol")
 
     try:
-        bars = get_candles(symbol, timeframe)
-
         return {
             "symbol": symbol,
             "timeframe": timeframe,
-            "bars": bars,
+            "bars": get_candles(symbol, timeframe),
             "source": "biquote",
             "note": "Regular forex, not Quotex OTC"
         }
-
     except Exception:
-        raise HTTPException(
-            status_code=502,
-            detail="Candle data unavailable"
-        )
+        raise HTTPException(status_code=502, detail="Candle data unavailable")
 
 
 def calculate_ema(values, period):
     if len(values) < period:
         return None
-
     ema = sum(values[:period]) / period
     multiplier = 2 / (period + 1)
-
     for price in values[period:]:
         ema = (price - ema) * multiplier + ema
-
     return ema
 
 
@@ -143,7 +116,6 @@ def calculate_rsi(values, period=14):
         values[i] - values[i - 1]
         for i in range(1, len(values))
     ]
-
     gains = [max(change, 0) for change in changes]
     losses = [max(-change, 0) for change in changes]
 
@@ -154,7 +126,6 @@ def calculate_rsi(values, period=14):
         avg_gain = (
             avg_gain * (period - 1) + gains[i]
         ) / period
-
         avg_loss = (
             avg_loss * (period - 1) + losses[i]
         ) / period
@@ -188,40 +159,32 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
 
     if timeframe not in ("1m", "5m"):
         raise HTTPException(status_code=400, detail="Use 1m or 5m")
-
     if not re.fullmatch(r"[A-Z0-9]{3,12}", symbol):
         raise HTTPException(status_code=400, detail="Invalid symbol")
 
     try:
         bars = get_candles(symbol, timeframe)
-
         if not bars:
-            raise HTTPException(
-                status_code=502,
-                detail="No candle data"
-            )
+            raise HTTPException(status_code=502, detail="No candle data")
 
         newest = bars[0]
-
         newest_time = datetime.fromisoformat(
             newest["openTime"].replace("Z", "+00:00")
         )
 
-        now = datetime.now(timezone.utc)
-        age_seconds = (now - newest_time).total_seconds()
+        age_seconds = (
+            datetime.now(timezone.utc) - newest_time
+        ).total_seconds()
+
         max_age = 180 if timeframe == "1m" else 600
 
         closed_bars = [
             bar for bar in bars
             if not bar.get("isOpen", False)
         ]
-
         closed_bars = list(reversed(closed_bars))
 
-        closes = [
-            float(bar["close"])
-            for bar in closed_bars
-        ]
+        closes = [float(bar["close"]) for bar in closed_bars]
 
         if age_seconds < -60 or age_seconds > max_age:
             return {
@@ -247,16 +210,29 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
         ema21 = calculate_ema(closes, 21)
         rsi14 = calculate_rsi(closes, 14)
 
+        last_close = closes[-1]
+        previous_close = closes[-2]
+
         signal = "WAIT"
-        reason = "Indicators do not confirm a clear direction"
+        reason = "Trend is not strongly confirmed"
 
-        if ema9 > ema21 and 50 < rsi14 < 70:
+        # CALL: upward trend + RSI strength + rising candle close
+        if (
+            ema9 > ema21
+            and rsi14 > 55
+            and last_close > previous_close
+        ):
             signal = "CALL"
-            reason = "EMA 9 above EMA 21 and RSI confirms upward momentum"
+            reason = "Uptrend confirmed by EMA, RSI and rising price"
 
-        elif ema9 < ema21 and 30 < rsi14 < 50:
+        # PUT: downward trend + RSI weakness + falling candle close
+        elif (
+            ema9 < ema21
+            and rsi14 < 45
+            and last_close < previous_close
+        ):
             signal = "PUT"
-            reason = "EMA 9 below EMA 21 and RSI confirms downward momentum"
+            reason = "Downtrend confirmed by EMA, RSI and falling price"
 
         response_data = {
             "symbol": symbol,
@@ -272,14 +248,9 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
 
         if signal in ("CALL", "PUT"):
             entry_price = float(newest["close"])
-
             result_id = register_result(
-                symbol,
-                timeframe,
-                signal,
-                entry_price
+                symbol, timeframe, signal, entry_price
             )
-
             response_data["result_id"] = result_id
             response_data["entry_price"] = entry_price
             response_data["result_after_seconds"] = 60
@@ -288,18 +259,13 @@ def analysis(symbol: str = "EURUSD", timeframe: str = "5m"):
 
     except HTTPException:
         raise
-
     except Exception:
-        raise HTTPException(
-            status_code=502,
-            detail="Analysis unavailable"
-        )
+        raise HTTPException(status_code=502, detail="Analysis unavailable")
 
 
 @app.get("/api/result-check")
 def result_check():
     now = datetime.now(timezone.utc)
-    completed_now = []
 
     with result_lock:
         due_items = [
@@ -311,8 +277,7 @@ def result_check():
     for key, item in due_items:
         try:
             exit_price = get_current_price(
-                item["symbol"],
-                item["timeframe"]
+                item["symbol"], item["timeframe"]
             )
 
             entry_price = item["entry_price"]
@@ -320,18 +285,10 @@ def result_check():
 
             if exit_price == entry_price:
                 outcome = "DRAW"
-
             elif signal == "CALL":
-                outcome = (
-                    "WIN" if exit_price > entry_price
-                    else "LOSS"
-                )
-
+                outcome = "WIN" if exit_price > entry_price else "LOSS"
             else:
-                outcome = (
-                    "WIN" if exit_price < entry_price
-                    else "LOSS"
-                )
+                outcome = "WIN" if exit_price < entry_price else "LOSS"
 
             record = {
                 "id": key,
@@ -341,17 +298,13 @@ def result_check():
                 "entry_price": entry_price,
                 "exit_price": exit_price,
                 "result": outcome,
-                "checked_at": datetime.now(
-                    timezone.utc
-                ).isoformat()
+                "checked_at": datetime.now(timezone.utc).isoformat()
             }
 
             with result_lock:
                 pending_results.pop(key, None)
                 completed_results.insert(0, record)
                 del completed_results[50:]
-
-            completed_now.append(record)
 
         except Exception:
             continue
@@ -366,7 +319,6 @@ def result_check():
             }
             for item in pending_results.values()
         ]
-
         completed = list(completed_results)
 
     return {
