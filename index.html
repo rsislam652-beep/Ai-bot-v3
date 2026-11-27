@@ -180,3 +180,9 @@ showHistory();
 </script>
 </body>
 </html>
+setInterval(() => {
+  const button = document.getElementById("scan");
+  if (!button.disabled) {
+    scanMarket();
+  }
+}, 60000);
